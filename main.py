@@ -1,111 +1,63 @@
-from hh_api import get_all_vacancies_for_companies, print_vacancies_by_company, get_vacancies_with_higher_salary
+import configparser
 
+from db_manager import DBManager
+from job_api import fetch_company_vacancies
 
-def user_interface():
-    vacancies_by_company = get_all_vacancies_for_companies()
+config = configparser.ConfigParser()
+config.read("settings.ini")
 
-    while True:
-        print("\nВыберите действие:")
-        print("1: Посмотреть количество вакансий по компаниям")
-        print("2: Посмотреть все вакансии")
-        print("3: Средняя заработная плата")
-        print("4: Вакансии с зарплатой выше средней")
-        print("5: Поиск вакансий по ключевому слову")
-        print("6: Выйти")
+db_settings = {
+    "dbname": config["database"]["dbname"],
+    "user": config["database"]["user"],
+    "password": config["database"]["password"],
+    "host": config["database"]["host"],
+}
 
-        try:
-            choice = int(input("\nВведите номер действия (1-6): "))
-        except ValueError:
-            print("Ошибка ввода! Пожалуйста, введите цифру от 1 до 6.")
-            continue
+db = DBManager(db_settings)
+db.setup_tables()
 
-        if choice == 1:
-            print("\nКоличество вакансий по компаниям:")
-            total_vacancies = 0
-            for company, vacancies in vacancies_by_company.items():
-                num_vacancies = len(vacancies)
-                total_vacancies += num_vacancies
-                print(f"\n- {company}: {num_vacancies} вакансий")
-                for vacancy in vacancies:
-                    title = vacancy.get('name', 'Не указано')
-                    url = vacancy.get('alternate_url', 'Нет ссылки')
-                    print(f"  - {title}, Ссылка: {url}")
+vacancies_data = fetch_company_vacancies(total_pages=5)
 
-            print(f"\nВсего вакансий: {total_vacancies}")
+for data in vacancies_data:
+    company = data.get("employer", {}).get("name", "Unknown Company")
+    title = data.get("name", "No Title")
+    salary = data.get("salary", {})
+    min_salary = salary.get("from") if salary else None
+    max_salary = salary.get("to") if salary else None
+    link = data.get("alternate_url", "No Link")
 
-        elif choice == 2:
-            print("\nВсе вакансии:")
-            for company, vacancies in vacancies_by_company.items():
-                print(f"\nКомпания: {company}")
-                for vacancy in vacancies:
-                    title = vacancy.get('name', 'Не указано')
-                    url = vacancy.get('alternate_url', 'Нет ссылки')
-                    print(f"  - {title}, Ссылка: {url}")
+    company_id = db.add_company(company)
+    db.add_vacancy(title, min_salary, max_salary, link, company_id)
 
-        elif choice == 3:
-            salaries = []
-            for company_vacancies in vacancies_by_company.values():
-                for vacancy in company_vacancies:
-                    salary = vacancy.get('salary')
-                    if salary:
-                        salary_from = salary.get('from', 0) or 0
-                        salary_to = salary.get('to', 0) or 0
-                        avg = (salary_from + salary_to) / 2
-                        if avg > 0:
-                            salaries.append(avg)
-            if salaries:
-                avg_salary = sum(salaries) / len(salaries)
-                print(f"\nСредняя заработная плата: {avg_salary:.2f} RUB")
-            else:
-                print("\nНет данных для расчета средней зарплаты.")
+while True:
+    print("\nВыберите вариант:")
+    print("1. Список вакансий")
+    print("2. Вакансии по компаниям")
+    print("3. Средняя зарплата")
+    print("4. Поиск вакансий по ключевому слову")
+    print("5. Вакансии с зарплатой выше средней")
 
-        elif choice == 4:
-            salaries = []
-            for company_vacancies in vacancies_by_company.values():
-                for vacancy in company_vacancies:
-                    salary = vacancy.get('salary')
-                    if salary:
-                        salary_from = salary.get('from', 0) or 0
-                        salary_to = salary.get('to', 0) or 0
-                        avg = (salary_from + salary_to) / 2
-                        if avg > 0:
-                            salaries.append(avg)
-            if salaries:
-                avg_salary = sum(salaries) / len(salaries)
-                print(f"\nСредняя заработная плата: {avg_salary:.2f} RUB")
-                higher_salary_vacancies = get_vacancies_with_higher_salary(vacancies_by_company, avg_salary)
-                print_vacancies_by_company(higher_salary_vacancies)
-            else:
-                print("\nНет данных для расчета средней зарплаты.")
+    user_input = input("Ваш выбор: ")
 
-        elif choice == 5:
-            keyword = input("\nВведите ключевое слово для поиска вакансий: ").lower()
-            print(f"\nРезультаты поиска вакансий по слову '{keyword}':")
-            for company, vacancies in vacancies_by_company.items():
-                matching_vacancies = [
-                    vacancy for vacancy in vacancies if keyword in vacancy.get('name', '').lower()
-                ]
-                if matching_vacancies:
-                    print(f"\nКомпания: {company}")
-                for vacancy in matching_vacancies:
-                    title = vacancy.get('name', 'Не указано')
-                    salary = vacancy.get('salary')
-                    if salary:
-                        salary_from = salary.get('from', 'Не указано')
-                        salary_to = salary.get('to', 'Не указано')
-                    else:
-                        salary_from = 'Не указано'
-                        salary_to = 'Не указано'
-                    url = vacancy.get('alternate_url', 'Нет ссылки')
-                    print(f"  - {title} (от {salary_from} до {salary_to}), Ссылка: {url}")
-
-        elif choice == 6:
-            print("Выход из программы...")
-            break
-
-        else:
-            print("Ошибка ввода! Пожалуйста, введите цифру от 1 до 6.")
-
-
-if __name__ == "__main__":
-    user_interface()
+    if user_input == "1":
+        for vac in db.get_all_vacancies():
+            print(
+                f"Вакансия: {vac[0]}, От: {vac[1]} до {vac[2]}, Ссылка: {vac[3]}, Компания: {vac[4]}"
+            )
+    elif user_input == "2":
+        for company in db.get_vacancy_count_by_company():
+            print(f"Компания: {company[0]}, Вакансий: {company[1]}")
+    elif user_input == "3":
+        print(f"Средняя зарплата: {db.get_average_salary():.2f}")
+    elif user_input == "4":
+        keyword = input("Введите слово для поиска: ")
+        for vac in db.search_vacancies(keyword):
+            print(
+                f"Вакансия: {vac[0]}, От: {vac[1]} до {vac[2]}, Ссылка: {vac[3]}, Компания: {vac[4]}"
+            )
+    elif user_input == "5":
+        avg_salary = db.get_average_salary()
+        for vac in db.get_high_salary_vacancies(avg_salary):
+            print(
+                f"Вакансия: {vac[0]}, От: {vac[1]} до {vac[2]}, Ссылка: {vac[3]}, Компания: {vac[4]}"
+            )
